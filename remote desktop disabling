@@ -1,0 +1,16 @@
+# -------------------- 2) Disable Remote Desktop connections (Allow users to connect remotely = Disabled) --------------------
+# fDenyTSConnections = 1 denies new RDP connections at the system level
+New-Item -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Force | Out-Null
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 1 -Type DWord -Force
+# additionally set the service to Disabled (this will stop RDP server entirely)
+Try {
+    Set-Service -Name 'TermService' -StartupType Disabled -ErrorAction Stop
+    Stop-Service -Name 'TermService' -Force -ErrorAction SilentlyContinue
+} catch {
+    Write-Warning "Could not change TermService (Remote Desktop Services) service - it may be protected or required."
+}
+Write-Host "Remote Desktop disabled (fDenyTSConnections=1)."
+Set-Service -Name "RpcLocator" -StartupType Disabled; Stop-Service -Name "RpcLocator" -Force -ErrorAction SilentlyContinue          # Remote Procedure Call (RPC) Locator
+Set-Service -Name "RemoteRegistry" -StartupType Disabled; Stop-Service -Name "RemoteRegistry" -Force -ErrorAction SilentlyContinue  # Remote Registry
+
+
