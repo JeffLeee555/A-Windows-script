@@ -1,0 +1,58 @@
+
+If facing firewall and windows defender completely disabled and not able to turn on:
+# === Windows Defender Fix ===
+Write-Host "Fixing Windows Defender settings..." -ForegroundColor Cyan
+
+# Remove policy keys that disable Defender
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender" -Name "DisableAntiSpyware" -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender" -Name "DisableRealtimeMonitoring" -ErrorAction SilentlyContinue
+
+# Ensure Defender service is set to Automatic
+Set-Service -Name WinDefend -StartupType Automatic -ErrorAction SilentlyContinue
+
+# Try starting Defender
+Start-Service -Name WinDefend -ErrorAction SilentlyContinue
+
+# === Windows Firewall Fix ===
+Write-Host "Fixing Windows Firewall settings..." -ForegroundColor Cyan
+
+# Remove policy keys that disable Firewall
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall\DomainProfile" -Name "EnableFirewall" -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall\PrivateProfile" -Name "EnableFirewall" -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall\PublicProfile" -Name "EnableFirewall" -ErrorAction SilentlyContinue
+
+# Set Firewall service to Automatic
+Set-Service -Name MpsSvc -StartupType Automatic -ErrorAction SilentlyContinue
+
+# Try starting Firewall
+Start-Service -Name MpsSvc -ErrorAction SilentlyContinue
+
+# Remove DisableAntiSpyware and related keys
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender" -Name "DisableAntiSpyware" -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender" -Name "DisableRealtimeMonitoring" -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Defender" -Name "DisableAntiSpyware" -ErrorAction SilentlyContinue
+
+Set-Service -Name WinDefend -StartupType Automatic
+Start-Service -Name WinDefend
+
+
+Write-Host "✅ Defender and Firewall fix attempted. Reboot may be required." -ForegroundColor Green
+
+If still not working:
+
+Get-WindowsFeature | Where-Object Name -like "*Defender*"
+
+If it shows:
+Windows-Defender-Features    Removed
+
+Then: 
+Install-WindowsFeature -Name Windows-Defender-Features -IncludeAllSubFeature
+Install-WindowsFeature -Name Windows-Defender-GUI
+Restart-Computer
+
+
+
+
+
+
+
