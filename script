@@ -4,58 +4,337 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     exit
 }
 
-# 1. Account Policies
-# Set password complexity, lockout threshold, and duration
-Write-Output "Setting account policies..."
-secedit /export /cfg C:\Windows\Temp\secpol.cfg
-(gc C:\Windows\Temp\secpol.cfg).replace("PasswordComplexity = 0","PasswordComplexity = 1") | Out-File C:\Windows\Temp\secpol.cfg -Force
-(gc C:\Windows\Temp\secpol.cfg).replace("LockoutBadCount = 0","LockoutBadCount = 5") | Out-File C:\Windows\Temp\secpol.cfg -Force
-(gc C:\Windows\Temp\secpol.cfg).replace("LockoutDuration = 0","LockoutDuration = 15") | Out-File C:\Windows\Temp\secpol.cfg -Force
-(gc C:\Windows\Temp\secpol.cfg).replace("ResetLockoutCount = 0","ResetLockoutCount = 15") | Out-File C:\Windows\Temp\secpol.cfg -Force
-secedit /configure /db secedit.sdb /cfg C:\Windows\Temp\secpol.cfg /overwrite
-Remove-Item C:\Windows\Temp\secpol.cfg
+# 2. Audit in the local policies
+# Classic categories (use 'Detailed Tracking' instead of 'Process Tracking')
+$categories = @(
+  "Account Logon",
+  "Account Management",
+  "DS Access",
+  "Logon/Logoff",
+  "Object Access",
+  "Policy Change",
+  "Privilege Use",
+  "Detailed Tracking",
+  "System"
+)
 
-# 2. Audit Policies
-# Enable audit policies for logon and account logon events
-Write-Output "Configuring audit policies..."
-auditpol /set /subcategory:"Logon" /success:enable /failure:enable
-auditpol /set /subcategory:"Account Logon" /success:enable /failure:enable
+foreach ($cat in $categories) {
+  Write-Output "Setting category: $cat"
+  & auditpol /set /category:"$cat" /success:enable /failure:enable 2>$null
+}
+
+# Ensure the Detailed Tracking subcategories are explicitly enabled (this is what "Process Tracking" maps to)
+$detailSubs = @(
+  "Process Creation",
+  "Process Termination",
+  "DPAPI Activity",
+  "RPC Events",
+  "PNP Activity",
+  "Token Right Adjusted"
+)
+
+foreach ($sub in $detailSubs) {
+  Write-Output "Setting subcategory: $sub"
+  & auditpol /set /subcategory:"$sub" /success:enable /failure:enable 2>$null
+}
+
+Write-Output "✅ Local Policy audit configuration attempted for all classic categories and Detailed Tracking subcategories."
+Write-Output "Verify with: auditpol /get /category:*"
+
+
 
 # 3. Windows Firewall
 # Enable Windows Firewall on all profiles
 Write-Output "Enabling Windows Firewall..."
 Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
 
-# 4. Disable Unnecessary Services
-# Disable unneeded services like Remote Registry, Xbox services, and Print Spooler if not needed
-Write-Output "Disabling unnecessary services..."
-Set-Service -Name "RemoteRegistry" -StartupType Disabled
-Set-Service -Name "XblGameSave" -StartupType Disabled
-Set-Service -Name "XboxGipSvc" -StartupType Disabled
-Set-Service -Name "Spooler" -StartupType Disabled  # Disable Print Spooler if not used
 
 # 5. Windows Update (Install Latest Updates)
 # Install updates (requires Windows Update PowerShell module)
 Write-Output "Installing security updates..."
 Install-WindowsUpdate -AcceptAll -IgnoreReboot
 
-# 6. User and Group Permissions
-# Ensure only approved users are in the Administrators group
-Write-Output "Ensuring only authorized users in Administrators group..."
-$authorizedAdmins = @("Administrator", "cyberpatriot")
-$admins = Get-LocalGroupMember -Group "Administrators"
-foreach ($admin in $admins) {
-    if ($admin.Name -notin $authorizedAdmins) {
-        Remove-LocalGroupMember -Group "Administrators" -Member $admin.Name
-        Write-Output "Removed unauthorized admin: $($admin.Name)"
-    }
-}
 
 # 7. Disable Guest Account
 Write-Output "Disabling Guest account..."
-Disable-LocalUser -Name "Guest"
+net user Guest /active:no
 
-# Final Output
-Write-Output "System hardening script for Windows Server 2022 completed."
+
+
+
+
+# Services Hardening Script (No conditional services)
+
+# --- Automatic Services ---
+Set-Service -Name "BFE" -StartupType Automatic; Start-Service -Name "BFE"                     # Base Filtering Engine
+Set-Service -Name "CryptSvc" -StartupType Automatic; Start-Service -Name "CryptSvc"           # Cryptographic Services
+Set-Service -Name "DcomLaunch" -StartupType Automatic; Start-Service -Name "DcomLaunch"       # DCOM Server Process Launcher
+Set-Service -Name "UxSms" -StartupType Automatic; Start-Service -Name "UxSms"                 # Desktop Window Manager Session Manager
+Set-Service -Name "Dhcp" -StartupType Automatic; Start-Service -Name "Dhcp"                   # DHCP Client
+Set-Service -Name "DPS" -StartupType Automatic; Start-Service -Name "DPS"                     # Diagnostic Policy Service
+Set-Service -Name "Dnscache" -StartupType Automatic; Start-Service -Name "Dnscache"           # DNS Client
+Set-Service -Name "gpsvc" -StartupType Automatic; Start-Service -Name "gpsvc"                 # Group Policy Client
+Set-Service -Name "PlugPlay" -StartupType Automatic; Start-Service -Name "PlugPlay"           # Plug and Play
+Set-Service -Name "Power" -StartupType Automatic; Start-Service -Name "Power"                 # Power
+Set-Service -Name "ProtectedStorage" -StartupType Automatic; Start-Service -Name "ProtectedStorage" # Protected Storage
+Set-Service -Name "RpcSs" -StartupType Automatic; Start-Service -Name "RpcSs"                 # Remote Procedure Call (RPC)
+Set-Service -Name "RpcEptMapper" -StartupType Automatic; Start-Service -Name "RpcEptMapper"   # RPC Endpoint Mapper
+Set-Service -Name "SamSs" -StartupType Automatic; Start-Service -Name "SamSs"                 # Security Accounts Manager
+Set-Service -Name "wscsvc" -StartupType Automatic; Start-Service -Name "wscsvc"               # Security Center
+Set-Service -Name "LanmanServer" -StartupType Automatic; Start-Service -Name "LanmanServer"   # Server
+
+Set-Service -Name "sppsvc" -StartupType Automatic; Start-Service -Name "sppsvc"               # Software Protection
+Set-Service -Name "Schedule" -StartupType Automatic; Start-Service -Name "Schedule"           # Task Scheduler
+Set-Service -Name "WinDefend" -StartupType Automatic; Start-Service -Name "WinDefend"         # Windows Defender Service
+Set-Service -Name "wudfsvc" -StartupType Automatic; Start-Service -Name "wudfsvc"             # Windows Driver Foundation
+Set-Service -Name "eventlog" -StartupType Automatic; Start-Service -Name "eventlog"           # Windows Event Log
+Set-Service -Name "MpsSvc" -StartupType Automatic; Start-Service -Name "MpsSvc"               # Windows Firewall
+Set-Service -Name "wuauserv" -StartupType Automatic; Start-Service -Name "wuauserv"           # Windows Update
+
+# --- Disabled Services ---
+Set-Service -Name "AdobeARMservice" -StartupType Disabled; Stop-Service -Name "AdobeARMservice" -Force -ErrorAction SilentlyContinue # Adobe Acrobat Update
+Set-Service -Name "bthserv" -StartupType Disabled; Stop-Service -Name "bthserv" -Force -ErrorAction SilentlyContinue                # Bluetooth Support Service
+Set-Service -Name "ClientForNFS" -StartupType Disabled; Stop-Service -Name "ClientForNFS" -Force -ErrorAction SilentlyContinue      # Client for NFS
+Set-Service -Name "FamilySafety" -StartupType Disabled; Stop-Service -Name "FamilySafety" -Force -ErrorAction SilentlyContinue      # Family Safety
+Set-Service -Name "Fax" -StartupType Disabled; Stop-Service -Name "Fax" -Force -ErrorAction SilentlyContinue                        # Fax
+Set-Service -Name "FTPSVC" -StartupType Disabled; Stop-Service -Name "FTPSVC" -Force -ErrorAction SilentlyContinue                  # FTP Publishing Service
+Set-Service -Name "HomeGroupListener" -StartupType Disabled; Stop-Service -Name "HomeGroupListener" -Force -ErrorAction SilentlyContinue # HomeGroup Listener
+Set-Service -Name "HomeGroupProvider" -StartupType Disabled; Stop-Service -Name "HomeGroupProvider" -Force -ErrorAction SilentlyContinue # HomeGroup Provider
+Set-Service -Name "NetTcpPortSharing" -StartupType Disabled; Stop-Service -Name "NetTcpPortSharing" -Force -ErrorAction SilentlyContinue # Net.Tcp Port Sharing Service
+Set-Service -Name "WerSvc" -StartupType Disabled; Stop-Service -Name "WerSvc" -Force -ErrorAction SilentlyContinue                  # Windows Error Reporting Service
+Set-Service -Name "Wecsvc" -StartupType Disabled; Stop-Service -Name "Wecsvc" -Force -ErrorAction SilentlyContinue                  # Windows Event Collector
+Set-Service -Name "SSDPSRV" -StartupType Disabled; Stop-Service -Name "SSDPSRV" -Force -ErrorAction SilentlyContinue                # SSDP Discovery
+Set-Service -Name "upnphost" -StartupType Disabled; Stop-Service -Name "upnphost" -Force -ErrorAction SilentlyContinue              # UPnP Device Host
+Set-Service -Name "TlntSvr" -StartupType Disabled; Stop-Service -Name "TlntSvr" -Force -ErrorAction SilentlyContinue                # Telnet
+Set-Service -Name "SNMPTRAP" -StartupType Disabled; Stop-Service -Name "SNMPTRAP" -Force -ErrorAction SilentlyContinue              # SNMP Trap
+Set-Service -Name "SimpTcp" -StartupType Disabled; Stop-Service -Name "SimpTcp" -Force -ErrorAction SilentlyContinue                # Simple TCP/IP Services
+Set-Service -Name "Browser" -StartupType Disabled; Stop-Service -Name "Browser" -Force -ErrorAction SilentlyContinue                # Computer Browser
+Set-Service -Name "XblGameSave" -StartupType Disabled; Stop-Service -Name "XblGameSave" -Force -ErrorAction SilentlyContinue
+Set-Service -Name "XboxGipSvc" -StartupType Disabled; Stop-Service -Name "XboxGipSvc" -Force -ErrorAction SilentlyContinue
+Set-Service -Name "Spooler" -StartupType Disabled; Stop-Service -Name "Spooler" -Force -ErrorAction SilentlyContinue                 # Disable Print Spooler if not used
+Set-Service -Name "SMTPSVC" -StartupType Disabled -ErrorAction SilentlyContinue; Stop-Service -Name "SMTPSVC" -Force -ErrorAction SilentlyContinue # Simple Mail Transfer Protocol
+Get-Service -Name LanmanServer | Set-Service -StartupType Automatic -Status Running
+
+
+
+
+
+Write-Host "CyberPatriot service hardening applied successfully."
+
+
+# secpol stuff
+
+Write-Output "Exporting current security policy..."
+net accounts /maxpwage:90
+
+
+secedit /export /cfg C:\Windows\Temp\secpol.cfg
+Write-Output "Updating password and lockout policies..."
+(gc C:\Windows\Temp\secpol.cfg).replace("PasswordHistorySize = 0","PasswordHistorySize = 10") | Out-File C:\Windows\Temp\secpol.cfg -Force
+(gc C:\Windows\Temp\secpol.cfg).replace("MaximumPasswordAge = 42","MaximumPasswordAge = 90") | Out-File C:\Windows\Temp\secpol.cfg -Force
+(gc C:\Windows\Temp\secpol.cfg).replace("MinimumPasswordAge = 0","MinimumPasswordAge = 30") | Out-File C:\Windows\Temp\secpol.cfg -Force
+(gc C:\Windows\Temp\secpol.cfg).replace("MinimumPasswordLength = 0","MinimumPasswordLength = 14") | Out-File C:\Windows\Temp\secpol.cfg -Force
+(gc C:\Windows\Temp\secpol.cfg).replace("PasswordComplexity = 0","PasswordComplexity = 1") | Out-File C:\Windows\Temp\secpol.cfg -Force
+(gc C:\Windows\Temp\secpol.cfg).replace("ClearTextPassword = 1","ClearTextPassword = 0") | Out-File C:\Windows\Temp\secpol.cfg -Force
+
+(gc C:\Windows\Temp\secpol.cfg).replace("LockoutBadCount = 0","LockoutBadCount = 10") | Out-File C:\Windows\Temp\secpol.cfg -Force
+(gc C:\Windows\Temp\secpol.cfg).replace("LockoutDuration = 0","LockoutDuration = 30") | Out-File C:\Windows\Temp\secpol.cfg -Force
+(gc C:\Windows\Temp\secpol.cfg).replace("ResetLockoutCount = 0","ResetLockoutCount = 30") | Out-File C:\Windows\Temp\secpol.cfg -Force
+
+Write-Output "Applying updated policy..."
+secedit /configure /db C:\Windows\security\local.sdb /cfg C:\Windows\Temp\secpol.cfg /overwrite
+
+Write-Output "Cleaning up temp file..."
+Remove-Item C:\Windows\Temp\secpol.cfg -Force
+
+Write-Output "Applying registry-based security options..."
+
+# Require Ctrl+Alt+Del (Disable 'Do not require')
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "DisableCAD" -Value 0 -Type DWord -Force
+
+# Clear pagefile at shutdown
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "ClearPageFileAtShutdown" -Value 1 -Type DWord -Force
+
+# Limit local use of blank passwords to console only
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -Value 1 -Type DWord -Force
+
+# Do not allow anonymous enumeration of SAM accounts
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "RestrictAnonymous" -Value 1 -Type DWord -Force
+
+# Microsoft network server: digitally sign communications (always)
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name "RequireSecuritySignature" -Value 1 -Type DWord -Force
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name "EnableSecuritySignature" -Value 1 -Type DWord -Force
+
+Write-Output "Configuring auditing..."
+auditpol /set /category:* /success:enable /failure:enable
+
+Write-Output "Done. Reboot recommended to fully apply changes."
+
+# Enable "Limit local account use of blank passwords to console logon only"
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -Type DWord -Value 1
+
+
+
+# -------------------- Setup backup --------------------
+$ts = (Get-Date).ToString("yyyyMMdd_HHmmss")
+$backupDir = "C:\Temp\HardeningBackup_$ts"
+New-Item -Path $backupDir -ItemType Directory -Force | Out-Null
+
+function Export-RegKeySafe {
+    param($keyPath, $outfile)
+    try {
+        & reg.exe export "$keyPath" "$outfile" /y 2>$null
+    } catch {
+        # ignore
+    }
+}
+
+# Export the policy/keys we will touch (best-effort)
+Export-RegKeySafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" "$backupDir\WindowsUpdate_AU.reg"
+Export-RegKeySafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Explorer" "$backupDir\Explorer_Policies.reg"
+Export-RegKeySafe "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" "$backupDir\Explorer_PoliciesLocal.reg"
+Export-RegKeySafe "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" "$backupDir\TerminalServer.reg"
+Export-RegKeySafe "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "$backupDir\TerminalServices_Policies.reg"
+Export-RegKeySafe "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "$backupDir\WindowsSearch_Policies.reg"
+Export-RegKeySafe "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer" "$backupDir\LanmanServer.reg"
+
+Write-Host "Backups saved to $backupDir"
+
+# -------------------- 1) Turn OFF AutoPlay for ALL drives --------------------
+# Group Policy -> Turn off Autoplay: set NoDriveTypeAutoRun = 255 (0xFF) => disables AutoPlay for all drives.
+New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' -Force | Out-Null
+New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' -Name 'NoDriveTypeAutoRun' -PropertyType DWord -Value 255 -Force | Out-Null
+# also set the older local policy location (some OS read from here)
+New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' -Force | Out-Null
+New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' -Name 'NoDriveTypeAutoRun' -PropertyType DWord -Value 255 -Force | Out-Null
+Write-Host "AutoPlay disabled for all drives (NoDriveTypeAutoRun=255)."
+
+
+# -------------------- 3) Disable Cortana --------------------
+New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' -Force | Out-Null
+New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search' -Name 'AllowCortana' -PropertyType DWord -Value 0 -Force | Out-Null
+Write-Host "Cortana disabled via policy (AllowCortana=0)."
+
+# -------------------- 4) Enable screen saver (and require password on resume) --------------------
+# We'll set both policy area and per-user Control Panel keys (best-effort).
+New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Force | Out-Null
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Name 'ScreenSaveActive' -Value '1' -Type String -Force
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Name 'ScreenSaverIsSecure' -Value '1' -Type String -Force
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop' -Name 'ScreenSaveTimeOut' -Value '600' -Type String -Force
+
+# Apply to loaded user hives (HKU) for existing profiles
+Get-ChildItem HKU: | Where-Object { $_.Name -match '^S-1-5-' } | ForEach-Object {
+    $sid = $_.PSChildName
+    $desktopPath = "HKU:\$sid\Control Panel\Desktop"
+    try {
+        New-Item -Path $desktopPath -Force | Out-Null
+        Set-ItemProperty -Path $desktopPath -Name 'ScreenSaveActive' -Value '1' -Type String -Force
+        Set-ItemProperty -Path $desktopPath -Name 'ScreenSaverIsSecure' -Value '1' -Type String -Force
+        Set-ItemProperty -Path $desktopPath -Name 'ScreenSaveTimeOut' -Value '600' -Type String -Force
+    } catch {
+        # ignore users we can't write to
+    }
+}
+Write-Host "Screen saver enabled (and password-protected) for users (timeout=600s)."
+
+# -------------------- 5) Windows Firewall: Protect all network connections (enable for Domain/Private/Public) --------------------
+# Use the built-in cmdlet to enable the three profiles
+Try {
+    Import-Module NetSecurity -ErrorAction SilentlyContinue
+    Set-NetFirewallProfile -Profile Domain,Private,Public -Enabled True -ErrorAction Stop
+    # Ensure the service is running
+    Set-Service -Name 'MpsSvc' -StartupType Automatic -ErrorAction SilentlyContinue
+    Start-Service -Name 'MpsSvc' -ErrorAction SilentlyContinue
+    Write-Host "Windows Firewall enabled for Domain, Private, and Public profiles."
+} catch {
+    Write-Warning "Failed to configure Windows Firewall with Set-NetFirewallProfile. You can use: netsh advfirewall set allprofiles state on"
+}
+
+# -------------------- 6) Require secure RPC communication (Remote Desktop Session Host -> Security) --------------------
+# Policy writes fEncryptRPCTraffic = 1 under Policies\Microsoft\Windows NT\Terminal Services
+New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Force | Out-Null
+New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -Name 'fEncryptRPCTraffic' -PropertyType DWord -Value 1 -Force | Out-Null
+Write-Host "Require secure RPC communication (fEncryptRPCTraffic=1) applied."
+
+# -------------------- 7) Require NLA for RDP (Network Level Authentication) --------------------
+# UserAuthentication = 1 under WinStations\RDP-Tcp enforces NLA on RDP
+New-Item -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Force | Out-Null
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -PropertyType DWord -Value 1 -Force
+Write-Host "Network Level Authentication requirement (UserAuthentication=1) set for RDP."
+
+# -------------------- 8) Configure Automatic Updates: Enabled -> option 4 (Auto download & schedule) -> every day at 03:00 --------------------
+New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate' -Force | Out-Null
+New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Force | Out-Null
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name 'AUOptions' -Type DWord -Value 4 -Force   # 4 = Auto download & schedule install
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name 'ScheduledInstallDay' -Type DWord -Value 0 -Force  # 0 = every day
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name 'ScheduledInstallTime' -Type DWord -Value 3 -Force # 03:00
+# If a WSUS entry exists and you want the system to use Microsoft Update instead, set UseWUServer=0 (this removes WSUS override)
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name 'UseWUServer' -Type DWord -Value 0 -Force
+Write-Host "Windows Update set to AUOptions=4 (auto-download & scheduled install at 03:00 daily)."
+
+# -------------------- 9) Disable SMB server & disable SMBv1 (hardening) --------------------
+# Disable SMBv1 feature (best practice). Also stop/disable LanmanServer (Server) service to remove SMB server functionality.
+Try {
+    # Disable SMBv1 optional feature (works on client/server builds with feature present)
+    Disable-WindowsOptionalFeature -Online -FeatureName smb1protocol -NoRestart -ErrorAction SilentlyContinue
+} catch {
+    # ignore if command not available / already disabled
+}
+# Also set server service (LanmanServer) to disabled if you don't need file/printer sharing
+Try {
+    Set-Service -Name 'LanmanServer' -StartupType Disabled -ErrorAction Stop
+    Stop-Service -Name 'LanmanServer' -Force -ErrorAction SilentlyContinue
+    Write-Host "LanmanServer (Server) service disabled. SMB server functionality is turned off."
+} catch {
+    Write-Warning "Could not disable LanmanServer service (may be required or protected)."
+}
+# Also try SMB server configuration to disable SMB1 at runtime
+Try {
+    Get-Command -Name Set-SmbServerConfiguration -ErrorAction SilentlyContinue | Out-Null
+    if ($?) {
+        Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force -ErrorAction SilentlyContinue
+    }
+} catch { }
+
+# -------------------- 10) Enable Run dialog (Win+R) for users --------------------
+# Remove NoRun policy or ensure NoRun=0 under HKCU/HKU policies
+# Remove machine-level NoRun if it exists (not usually present)
+Try { Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' -Name 'NoRun' -ErrorAction SilentlyContinue } catch {}
+# Per-user: for each loaded user hive, remove NoRun or set to 0
+Get-ChildItem HKU: | Where-Object { $_.Name -match '^S-1-5-' } | ForEach-Object {
+    $sid = $_.PSChildName
+    $userPolicyPath = "HKU:\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+    try {
+        New-Item -Path $userPolicyPath -Force | Out-Null
+        Remove-ItemProperty -Path $userPolicyPath -Name 'NoRun' -ErrorAction SilentlyContinue
+        New-ItemProperty -Path $userPolicyPath -Name 'NoRun' -PropertyType DWord -Value 0 -Force | Out-Null
+    } catch { }
+}
+Write-Host "Run dialog enabled for existing user hives (NoRun removed/set 0)."
+
+# -------------------- Final notes --------------------
+Write-Host ""
+Write-Host "Done — policy changes applied (best-effort). Some changes (Windows Update, firewall, SMB, RDP) may require a restart to fully apply." -ForegroundColor Green
+Write-Host "Backup of pre-change registry keys is at: $backupDir"
+Write-Host ""
+Write-Host "Verification commands (run separately to check):"
+Write-Host " - Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer' -Name NoDriveTypeAutoRun"
+Write-Host " - (Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU').AUOptions"
+Write-Host " - Get-NetFirewallProfile | Format-Table Name,Enabled"
+Write-Host " - Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services' -Name fEncryptRPCTraffic"
+Write-Host " - Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server' -Name fDenyTSConnections"
+Write-Host " - sc.exe qc LanmanServer"
+Write-Host ""
+
+
+# Set UAC behavior for administrators to "Prompt for consent on the secure desktop"
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
+    -Name "ConsentPromptBehaviorAdmin" -Value 2
+
+# Ensure UAC prompts occur on the secure desktop
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
+    -Name "PromptOnSecureDesktop" -Value 1
+
+Write-Host "✅ UAC is now set to 'Prompt for consent on the secure desktop'."
 
 
